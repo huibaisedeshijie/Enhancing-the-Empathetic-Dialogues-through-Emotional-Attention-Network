@@ -12,6 +12,6 @@ The main steps of the system: Step 1 Import the pre-trained model and generate t
 
 ## Environment
 Check the packages needed or simply run the command
-'''
+```
 pip install -r requirements.txt
-'''
+```

@@ -7,3 +7,11 @@ This paper proposes a method to use emotional attention networks to improve the 
 
 ## Main process
 ![](https://github.com/huibaisedeshijie/Enhancing-the-Empathetic-Dialogues-through-Emotional-Attention-Network/blob/main/1-main-stream(simple).drawio%20(1).png)
+
+The main steps of the system: Step 1 Import the pre-trained model and generate the response. Step 2 encodes the response and context and imports the emotional attention network for classification. Step 3, use sentiment adapters and adapter fusion to fine-tune and generate final responses.
+
+## Environment
+Check the packages needed or simply run the command
+'''
+pip install -r requirements.txt
+'''

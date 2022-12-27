@@ -6,8 +6,11 @@ We add two translator to make demo used in chinese.
 ## Request
 
 transformers
+
 torch
+
 gradio
+
 SentencePiece
 
 ## Run

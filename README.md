@@ -17,12 +17,12 @@ pip install -r requirements.txt
 ```
 Some files are placed on Google Drive because they are too large, download and put in/empathetic-dialogue/
 ```
-
+https://drive.google.com/drive/folders/19Om9NA2SZcGwGHTAVOn5m036eavhC3i4?usp=share_link
 ```
 
 Pre-trained glove embedding: glove.6B.300d.txt inside folder /vectors/.
 ```
-To be downloaded from http://nlp.stanford.edu/data/glove.6B.zip
+http://nlp.stanford.edu/data/glove.6B.zip
 ```
 ## Train 
 ```

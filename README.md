@@ -20,7 +20,7 @@ Some files are placed on Google Drive because they are too large, download and p
 https://drive.google.com/drive/folders/19Om9NA2SZcGwGHTAVOn5m036eavhC3i4?usp=share_link
 ```
 
-Pre-trained glove embedding: glove.6B.300d.txt inside folder /vectors/.
+Pre-trained glove embedding: glove.6B.300d.txt inside folder vectors/.
 ```
 http://nlp.stanford.edu/data/glove.6B.zip
 ```

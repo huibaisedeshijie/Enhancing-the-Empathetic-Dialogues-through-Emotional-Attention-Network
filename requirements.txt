@@ -3,6 +3,6 @@ tqdm==4.32.1
 tensorboardX==1.6
 sklearn==0.0
 numpy==1.22.1
-matploatlib
+matplotlib
 nltk
 vaderSentiment

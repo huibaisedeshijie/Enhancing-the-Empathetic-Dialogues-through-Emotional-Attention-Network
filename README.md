@@ -15,7 +15,7 @@ Check the packages needed or simply run the command
 ```
 pip install -r requirements.txt
 ```
-Some files are placed on Google Drive because they are too large, download and put in/empathetic-dialogue/
+Some files are placed on Google Drive because they are too large, download and put in/dataset/
 ```
 https://drive.google.com/drive/folders/19Om9NA2SZcGwGHTAVOn5m036eavhC3i4?usp=share_link
 ```

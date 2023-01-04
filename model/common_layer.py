@@ -1,6 +1,6 @@
 ### MOST OF IT TAKEN FROM https://github.com/kolloldas/torchnlp
 ## MINOR CHANGES
-# import matplotlib
+import matplotlib
 # matplotlib.use('Agg')
 import torch
 import torch.nn as nn
@@ -24,16 +24,31 @@ elif(config.model == 'multi-trs'):
     from utils.beam_omt_multiplex import Translator
 elif(config.model == 'experts'):
     from utils.beam_omt_experts import Translator
+elif(config.model == 'mimic'):
+    # from utils.beam_omt_mimic import Translator
+    from utils.beam_omt_mimic_model1 import Translator
+    # from utils.beam_omt_mimic_model1_noMimic import Translator
+    # from utils.beam_omt_mimic_model1_posNeg import Translator
+    # from utils.beam_omt_mimic_model1_noVAE import Translator
+elif(config.model == 'vae'):
+    from utils.beam_omt_vae import Translator
+elif(config.model == 'new_dec'):
+    from utils.beam_omt_mimic_new_dec import Translator
+elif(config.model == 'new_dec2'):
+    from utils.beam_omt_mimic_new_dec2 import Translator
+elif(config.model == 'model1_bert'):
+    from utils.beam_omt_bert import Translator
+elif(config.model == 'model1_noMimic'):
+    from utils.beam_omt_noMimic import Translator
+elif(config.model == 'model1_gpt2'):
+    from utils.beam_omt_gpt2 import Translator
+
 import pprint
 from tqdm import tqdm
 pp = pprint.PrettyPrinter(indent=1)
 import numpy as np
 # import matplotlib.pyplot as plt
 
-torch.manual_seed(0)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-np.random.seed(0)
 
 class EncoderLayer(nn.Module):
     """
@@ -56,41 +71,41 @@ class EncoderLayer(nn.Module):
             attention_dropout: Dropout probability after attention (Should be non-zero only during training)
             relu_dropout: Dropout probability after relu in FFN (Should be non-zero only during training)
         """
-        
+
         super(EncoderLayer, self).__init__()
-        
-        self.multi_head_attention = MultiHeadAttention(hidden_size, total_key_depth, total_value_depth, 
+
+        self.multi_head_attention = MultiHeadAttention(hidden_size, total_key_depth, total_value_depth,
                                                        hidden_size, num_heads, bias_mask, attention_dropout)
-        
+
         self.positionwise_feed_forward = PositionwiseFeedForward(hidden_size, filter_size, hidden_size,
-                                                                 layer_config='cc', padding = 'both', 
+                                                                 layer_config='cc', padding = 'both',
                                                                  dropout=relu_dropout)
         self.dropout = nn.Dropout(layer_dropout)
         self.layer_norm_mha = LayerNorm(hidden_size)
         self.layer_norm_ffn = LayerNorm(hidden_size)
         # self.layer_norm_end = LayerNorm(hidden_size)
-        
+
     def forward(self, inputs, mask=None):
         x = inputs
-        
+
         # Layer Normalization
         x_norm = self.layer_norm_mha(x)
-        
+
         # Multi-head attention
         y, _ = self.multi_head_attention(x_norm, x_norm, x_norm, mask)
-        
+
         # Dropout and residual
         x = self.dropout(x + y)
-        
+
         # Layer Normalization
         x_norm = self.layer_norm_ffn(x)
-        
+
         # Positionwise Feedforward
         y = self.positionwise_feed_forward(x_norm)
-        
+
         # Dropout and residual
         y = self.dropout(x + y)
-        
+
         # y = self.layer_norm_end(y)
         return y
 
@@ -115,17 +130,17 @@ class DecoderLayer(nn.Module):
             attention_dropout: Dropout probability after attention (Should be non-zero only during training)
             relu_dropout: Dropout probability after relu in FFN (Should be non-zero only during training)
         """
-        
+
         super(DecoderLayer, self).__init__()
-        
-        self.multi_head_attention_dec = MultiHeadAttention(hidden_size, total_key_depth, total_value_depth, 
+
+        self.multi_head_attention_dec = MultiHeadAttention(hidden_size, total_key_depth, total_value_depth,
                                                        hidden_size, num_heads, bias_mask, attention_dropout)
 
-        self.multi_head_attention_enc_dec = MultiHeadAttention(hidden_size, total_key_depth, total_value_depth, 
+        self.multi_head_attention_enc_dec = MultiHeadAttention(hidden_size, total_key_depth, total_value_depth,
                                                        hidden_size, num_heads, None, attention_dropout)
-        
+
         self.positionwise_feed_forward = PositionwiseFeedForward(hidden_size, filter_size, hidden_size,
-                                                                 layer_config='cc', padding = 'left', 
+                                                                 layer_config='cc', padding = 'left',
                                                                  dropout=relu_dropout)
         self.dropout = nn.Dropout(layer_dropout)
         self.layer_norm_mha_dec = LayerNorm(hidden_size)
@@ -133,7 +148,7 @@ class DecoderLayer(nn.Module):
         self.layer_norm_ffn = LayerNorm(hidden_size)
         # self.layer_norm_end = LayerNorm(hidden_size)
 
-        
+
     def forward(self, inputs):
         """
         NOTE: Inputs is a tuple consisting of decoder inputs and encoder output
@@ -141,13 +156,13 @@ class DecoderLayer(nn.Module):
 
         x, encoder_outputs, attention_weight, mask = inputs
         mask_src, dec_mask = mask
-        
+
         # Layer Normalization before decoder self attention
         x_norm = self.layer_norm_mha_dec(x)
-        
+
         # Masked Multi-head attention
         y, _ = self.multi_head_attention_dec(x_norm, x_norm, x_norm, dec_mask)
-        
+
         # Dropout and residual after self-attention
         x = self.dropout(x + y)
 
@@ -159,23 +174,23 @@ class DecoderLayer(nn.Module):
 
         # Dropout and residual after encoder-decoder attention
         x = self.dropout(x + y)
-        
+
         # Layer Normalization
         x_norm = self.layer_norm_ffn(x)
-        
+
         # Positionwise Feedforward
         y = self.positionwise_feed_forward(x_norm)
-        
+
         # Dropout and residual after positionwise feed forward layer
         y = self.dropout(x + y)
-        
+
         # y = self.layer_norm_end(y)
-        
+
         # Return encoder outputs as well to work with nn.Sequential
         return y, encoder_outputs, attention_weight, mask
 
 class MultiExpertMultiHeadAttention(nn.Module):
-    def __init__(self, num_experts, input_depth, total_key_depth, total_value_depth, output_depth, 
+    def __init__(self, num_experts, input_depth, total_key_depth, total_value_depth, output_depth,
                  num_heads, bias_mask=None, dropout=0.0):
         """
         Parameters:
@@ -197,7 +212,7 @@ class MultiExpertMultiHeadAttention(nn.Module):
         # if total_value_depth % num_heads != 0:
         #     raise ValueError("Value depth (%d) must be divisible by the number of "
         #                      "attention heads (%d)." % (total_value_depth, num_heads))
-            
+
         if total_key_depth % num_heads != 0:
             print("Key depth (%d) must be divisible by the number of "
                              "attention heads (%d)." % (total_key_depth, num_heads))
@@ -210,15 +225,15 @@ class MultiExpertMultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.query_scale = (total_key_depth//num_heads)**-0.5 ## sqrt
         self.bias_mask = bias_mask
-        
+
         # Key and query depth will be same
         self.query_linear = nn.Linear(input_depth, total_key_depth*num_experts, bias=False)
         self.key_linear = nn.Linear(input_depth, total_key_depth*num_experts, bias=False)
         self.value_linear = nn.Linear(input_depth, total_value_depth*num_experts, bias=False)
         self.output_linear = nn.Linear(total_value_depth, output_depth*num_experts, bias=False)
-        
+
         self.dropout = nn.Dropout(dropout)
-    
+
     def _split_heads(self, x):
         """
         Split x such to add an extra num_heads dimension
@@ -231,7 +246,7 @@ class MultiExpertMultiHeadAttention(nn.Module):
             raise ValueError("x must have rank 3")
         shape = x.shape
         return x.view(shape[0], shape[1], self.num_experts, self.num_heads, shape[2]//(self.num_heads*self.num_experts)).permute(0, 2, 3, 1, 4)
-    
+
     def _merge_heads(self, x):
         """
         Merge the extra num_heads into the last dimension
@@ -244,25 +259,25 @@ class MultiExpertMultiHeadAttention(nn.Module):
             raise ValueError("x must have rank 5")
         shape = x.shape
         return x.permute(0, 3, 1, 2, 4).contiguous().view(shape[0], shape[3], self.num_experts, shape[4]*self.num_heads)
-        
+
     def forward(self, queries, keys, values, mask):
-        
+
         # Do a linear for each component
         queries = self.query_linear(queries)
         keys = self.key_linear(keys)
         values = self.value_linear(values)
-        
+
         # Split into multiple heads
         queries = self._split_heads(queries)
         keys = self._split_heads(keys)
         values = self._split_heads(values)
-        
+
         # Scale queries
         queries *= self.query_scale
-        
+
         # Combine queries and keys
         logits = torch.matmul(queries, keys.permute(0, 1, 2, 4, 3))
-        
+
         if mask is not None:
             mask = mask.unsqueeze(1).unsqueeze(1)  # [B, 1, 1, 1, T_values]
             logits = logits.masked_fill(mask, -1e18)
@@ -275,17 +290,17 @@ class MultiExpertMultiHeadAttention(nn.Module):
 
         # Dropout
         weights = self.dropout(weights)
-        
+
         # Combine with values to get context
         contexts = torch.matmul(weights, values)
-        
+
         # Merge heads
         contexts = self._merge_heads(contexts)
         #contexts = torch.tanh(contexts)
-        
+
         # Linear to get output
         outputs = self.output_linear(contexts)
-        
+
         return outputs
 
 class MultiHeadAttention(nn.Module):
@@ -293,7 +308,7 @@ class MultiHeadAttention(nn.Module):
     Multi-head attention as per https://arxiv.org/pdf/1706.03762.pdf
     Refer Figure 2
     """
-    def __init__(self, input_depth, total_key_depth, total_value_depth, output_depth, 
+    def __init__(self, input_depth, total_key_depth, total_value_depth, output_depth,
                  num_heads, bias_mask=None, dropout=0.0):
         """
         Parameters:
@@ -314,7 +329,7 @@ class MultiHeadAttention(nn.Module):
         # if total_value_depth % num_heads != 0:
         #     raise ValueError("Value depth (%d) must be divisible by the number of "
         #                      "attention heads (%d)." % (total_value_depth, num_heads))
-            
+
         if total_key_depth % num_heads != 0:
             print("Key depth (%d) must be divisible by the number of "
                              "attention heads (%d)." % (total_key_depth, num_heads))
@@ -327,15 +342,15 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.query_scale = (total_key_depth//num_heads)**-0.5 ## sqrt
         self.bias_mask = bias_mask
-        
+
         # Key and query depth will be same
         self.query_linear = nn.Linear(input_depth, total_key_depth, bias=False)
         self.key_linear = nn.Linear(input_depth, total_key_depth, bias=False)
         self.value_linear = nn.Linear(input_depth, total_value_depth, bias=False)
         self.output_linear = nn.Linear(total_value_depth, output_depth, bias=False)
-        
+
         self.dropout = nn.Dropout(dropout)
-    
+
     def _split_heads(self, x):
         """
         Split x such to add an extra num_heads dimension
@@ -348,7 +363,7 @@ class MultiHeadAttention(nn.Module):
             raise ValueError("x must have rank 3")
         shape = x.shape
         return x.view(shape[0], shape[1], self.num_heads, shape[2]//self.num_heads).permute(0, 2, 1, 3)
-    
+
     def _merge_heads(self, x):
         """
         Merge the extra num_heads into the last dimension
@@ -361,25 +376,25 @@ class MultiHeadAttention(nn.Module):
             raise ValueError("x must have rank 4")
         shape = x.shape
         return x.permute(0, 2, 1, 3).contiguous().view(shape[0], shape[2], shape[3]*self.num_heads)
-        
+
     def forward(self, queries, keys, values, mask):
-        
+
         # Do a linear for each component
         queries = self.query_linear(queries)
         keys = self.key_linear(keys)
         values = self.value_linear(values)
-        
+
         # Split into multiple heads
         queries = self._split_heads(queries)
         keys = self._split_heads(keys)
         values = self._split_heads(values)
-        
+
         # Scale queries
         queries *= self.query_scale
-        
+
         # Combine queries and keys
         logits = torch.matmul(queries, keys.permute(0, 1, 3, 2))
-        
+
         if mask is not None:
             mask = mask.unsqueeze(1)  # [B, 1, 1, T_values]
             logits = logits.masked_fill(mask, -1e18)
@@ -392,17 +407,17 @@ class MultiHeadAttention(nn.Module):
 
         # Dropout
         weights = self.dropout(weights)
-        
+
         # Combine with values to get context
         contexts = torch.matmul(weights, values)
-        
+
         # Merge heads
         contexts = self._merge_heads(contexts)
         #contexts = torch.tanh(contexts)
-        
+
         # Linear to get output
         outputs = self.output_linear(contexts)
-        
+
         return outputs, attetion_weights
 
 class Conv(nn.Module):
@@ -448,10 +463,10 @@ class PositionwiseFeedForward(nn.Module):
             dropout: Dropout probability (Should be non-zero only during training)
         """
         super(PositionwiseFeedForward, self).__init__()
-        
+
         layers = []
-        sizes = ([(input_depth, filter_size)] + 
-                 [(filter_size, filter_size)]*(len(layer_config)-2) + 
+        sizes = ([(input_depth, filter_size)] +
+                 [(filter_size, filter_size)]*(len(layer_config)-2) +
                  [(filter_size, output_depth)])
 
         for lc, s in zip(list(layer_config), sizes):
@@ -465,7 +480,7 @@ class PositionwiseFeedForward(nn.Module):
         self.layers = nn.ModuleList(layers)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
-        
+
     def forward(self, inputs):
         x = inputs
         for i, layer in enumerate(self.layers):
@@ -498,7 +513,7 @@ def _gen_bias_mask(max_length):
     """
     np_mask = np.triu(np.full([max_length, max_length], -np.inf), 1)
     torch_mask = torch.from_numpy(np_mask).type(torch.FloatTensor)
-    
+
     return torch_mask.unsqueeze(0).unsqueeze(1)
 
 def _gen_timing_signal(length, channels, min_timescale=1.0, max_timescale=1.0e4):
@@ -586,7 +601,7 @@ def gen_embeddings(vocab):
         If an embedding file is not given or a word is not in the embedding file,
         a randomly initialized vector will be used.
     """
-    embeddings = np.random.randn(vocab.n_words, config.emb_dim) * 0.01 
+    embeddings = np.random.randn(vocab.n_words, config.emb_dim) * 0.01
     print('Embeddings: %d x %d' % (vocab.n_words, config.emb_dim))
     if config.emb_file is not None:
         print('Loading embedding file: %s' % config.emb_file)
@@ -629,7 +644,7 @@ class LabelSmoothing(nn.Module):
         self.smoothing = smoothing
         self.size = size
         self.true_dist = None
-        
+
     def forward(self, x, target):
         assert x.size(1) == self.size
         true_dist = x.data.clone()
@@ -652,7 +667,7 @@ class NoamOpt:
         self.factor = factor
         self.model_size = model_size
         self._rate = 0
-    
+
     def state_dict(self):
         return self.optimizer.state_dict()
 
@@ -664,7 +679,7 @@ class NoamOpt:
             p['lr'] = rate
         self._rate = rate
         self.optimizer.step()
-        
+
     def rate(self, step = None):
         "Implement `lrate` above"
         if step is None:
@@ -727,7 +742,7 @@ def get_output_from_batch(batch):
         target_batch = batch["target_ext_vocab_batch"]
     else:
         target_batch = dec_batch
-        
+
     dec_lens_var = batch["target_lengths"]
     max_dec_len = max(dec_lens_var)
 
@@ -765,42 +780,37 @@ def write_config():
                     the_file.write("--{} {} ".format(k,v))
 
 
-def print_custum(emotion,dial,ref,hyp_g,hyp_b):
+def print_custum(emotion,dial,ref,hyp_g,hyp_b, hyp_t):
     print("emotion:{}".format(emotion))
     print("Context:{}".format(dial))
-    #print("Topk:{}".format(hyp_t))
+    print("Topk:{}".format(hyp_t))
     print("Beam: {}".format(hyp_b))
     print("Greedy:{}".format(hyp_g))
     print("Ref:{}".format(ref))
     print("----------------------------------------------------------------------")
     print("----------------------------------------------------------------------")
 
+def write_custum(emotion,vader_score,emo,dial,ref,hyp_g,hyp_b, hyp_t):
+    ret = ""
+    ret += "emotion:{}".format(emotion) + '\t' + f'vader-score: {vader_score}' + '\t' + f'predicted_emotion: {emo}' + '\n'
+    ret += "Context:{}".format(dial) + '\n'
+    ret += "Topk:{}".format(hyp_t)+ '\n'
+    ret += "Beam: {}".format(hyp_b) + '\n'
+    ret +=  "Greedy:{}".format(hyp_g) + '\n'
+    ret +=  "Ref:{}".format(ref) + '\n'
+    ret +=  "----------------------------------------------------------------------" + '\n'
+    return ret
 
 
-def plot_ptr_stats(model):
-    stat_dict = model.generator.stats
-    a = np.mean(stat_dict["a"]) 
-    a_1_g = np.mean(stat_dict["a_1_g"]) 
-    a_1_g_1 = np.mean(stat_dict["a_1_g_1"]) 
-    a_STD = np.std(stat_dict["a"]) 
-    a_1_g_STD = np.std(stat_dict["a_1_g"]) 
-    a_1_g_1_STD = np.std(stat_dict["a_1_g_1"]) 
-    name = ['Vocab', 'Dialg', 'DB']
-    x_pos = np.arange(3)
-    CTEs = [a, a_1_g, a_1_g_1]
-    error = [a_STD, a_1_g_STD, a_1_g_1_STD]
-    fig, ax = plt.subplots()
-    ax.bar(x_pos, CTEs, yerr=error, align='center', alpha=0.5, ecolor='black', capsize=10)
-    ax.set_ylabel('Distribution weights')
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels(name)
-    ax.yaxis.grid(True)
-    # Save the figure and show
-    plt.tight_layout()
-    plt.savefig(config.save_path+'bar_plot_with_error_bars.png')
 
+def evaluate(model, data,  ty='valid', max_dec_step=30, write_summary=False):
+    emo_map = {
+        'surprised': 0, 'excited': 1, 'annoyed': 2, 'proud': 3, 'angry': 4, 'sad': 5, 'grateful': 6, 'lonely': 7,
+        'impressed': 8, 'afraid': 9, 'disgusted': 10, 'confident': 11, 'terrified': 12, 'hopeful': 13, 'anxious': 14, 'disappointed': 15,
+        'joyful': 16, 'prepared': 17, 'guilty': 18, 'furious': 19, 'nostalgic': 20, 'jealous': 21, 'anticipating': 22, 'embarrassed': 23,
+        'content': 24, 'devastated': 25, 'sentimental': 26, 'caring': 27, 'trusting': 28, 'ashamed': 29, 'apprehensive': 30, 'faithful': 31}
+    emo_map = {v:k for k,v in emo_map.items()}
 
-def evaluate(model, data,  ty='valid', max_dec_step=30):
     model.__id__logger = 0
     dial = []
     ref, hyp_g, hyp_b, hyp_t = [],[],[],[]
@@ -812,44 +822,51 @@ def evaluate(model, data,  ty='valid', max_dec_step=30):
     bce = []
     acc = []
     pbar = tqdm(enumerate(data),total=len(data))
-    for j, batch in pbar:
-        loss, ppl, bce_prog, acc_prog = model.train_one_batch(batch, 0, train=False)
+    inf_results = []
+    try:
+        for j, batch in pbar:
+            loss, ppl, bce_prog, acc_prog = model.train_one_batch(batch, 0, train=False)
 
-        l.append(loss)
-        p.append(ppl)
-        bce.append(bce_prog)
-        acc.append(acc_prog)
-        if(ty =="test"): 
-            sent_g = model.decoder_greedy(batch,max_dec_step=max_dec_step)
-            sent_b = t.beam_search(batch, max_dec_step=max_dec_step)
-            #sent_t = model.decoder_topk(batch, max_dec_step=max_dec_step)
-            for i, (greedy_sent, beam_sent)  in enumerate(zip(sent_g, sent_b)):
-                rf = " ".join(batch["target_txt"][i])
-                hyp_g.append(greedy_sent)
-                hyp_b.append(beam_sent) 
-                #hyp_t.append(topk_sent)
-                ref.append(rf)
-                print_custum(emotion= batch["program_txt"][i],
-                            dial=[" ".join(s) for s in batch['input_txt'][i]] if config.dataset=="empathetic" else " ".join(batch['input_txt'][i]),
-                            ref=rf,
-                            #hyp_t=topk_sent,
-                            hyp_g=greedy_sent,
-                            hyp_b=beam_sent)   
-        pbar.set_description("loss:{:.4f} ppl:{:.1f}".format(np.mean(l),math.exp(np.mean(l))))
+            l.append(loss)
+            p.append(ppl)
+            bce.append(bce_prog)
+            acc.append(acc_prog)
+            if(ty =="test"):
+                sent_g, vader_score, emotion_id = model.decoder_greedy(batch,max_dec_step=max_dec_step)
+                sent_b = t.beam_search(batch, max_dec_step=max_dec_step)
+                sent_t = model.decoder_topk(batch, max_dec_step=max_dec_step)
+                for i, (greedy_sent, beam_sent, topk_sent)  in enumerate(zip(sent_g, sent_b, sent_t)):
+                    rf = " ".join(batch["target_txt"][i])
+                    hyp_g.append(greedy_sent)
+                    hyp_b.append(beam_sent)
+                    hyp_t.append(topk_sent)
+                    ref.append(rf)
+                    # print_custom
+                    temp = write_custum(emotion= batch["program_txt"][i], vader_score=vader_score, emo=emo_map[emotion_id],
+                                dial=[" ".join(s) for s in batch['input_txt'][i]] if config.dataset=="empathetic" else " ".join(batch['input_txt'][i]),
+                                ref=rf,
+                                hyp_t=topk_sent,
+                                hyp_g=greedy_sent,
+                                hyp_b=beam_sent)
+                    inf_results.append(temp)
+            pbar.set_description("loss:{:.4f} ppl:{:.1f}".format(np.mean(l),math.exp(np.mean(l))))
+    except KeyboardInterrupt:
+        print("Only testing for a fraction of testing dataset, do not use this result!")
 
     loss = np.mean(l)
     ppl = np.mean(p)
     bce = np.mean(bce)
     acc = np.mean(acc)
-    
-    bleu_score_g = moses_multi_bleu(np.array(hyp_g), np.array(ref), lowercase=True) 
+    bleu_score_g = moses_multi_bleu(np.array(hyp_g), np.array(ref), lowercase=True)
     bleu_score_b = moses_multi_bleu(np.array(hyp_b), np.array(ref), lowercase=True)
-    #bleu_score_t = moses_multi_bleu(np.array(hyp_t), np.array(ref), lowercase=True)
+    bleu_score_t = moses_multi_bleu(np.array(hyp_t), np.array(ref), lowercase=True)
 
-    print("EVAL\tLoss\tPPL\tAccuracy\tBleu_g\tBleu_b")
-    print("{}\t{:.4f}\t{:.4f}\t{:.2f}\t{:.2f}\t{:.2f}".format(ty,loss,math.exp(loss), acc, bleu_score_g,bleu_score_b))
-    
-    return loss, math.exp(loss), bce, acc, bleu_score_g, bleu_score_b
+    print("EVAL\tLoss\tPPL\tAccuracy\tBleu_g\tBleu_b\tBlue_t")
+    print("{}\t{:.4f}\t{:.4f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}".format(ty,loss,math.exp(loss), acc, bleu_score_g,bleu_score_b, bleu_score_t))
+    if write_summary:
+        return loss, math.exp(loss), bce, acc, bleu_score_g, bleu_score_b, bleu_score_t, inf_results
+    else:
+        return loss, math.exp(loss), bce, acc, bleu_score_g, bleu_score_b, bleu_score_t
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)

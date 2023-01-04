@@ -19,10 +19,6 @@ import time
 from copy import deepcopy
 from sklearn.metrics import accuracy_score
 
-torch.manual_seed(0)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-np.random.seed(0)
 
 class Encoder(nn.Module):
     """
@@ -246,6 +242,7 @@ class MulDecoder(nn.Module):
     def forward(self, inputs, encoder_output, mask, attention_epxert):
         mask_src, mask_trg = mask
         dec_mask = torch.gt(mask_trg + self.mask[:, :mask_trg.size(-1), :mask_trg.size(-1)], 0)
+        # import pdb; pdb.set_trace()
         #Add input dropout
         x = self.input_dropout(inputs)
         if (not config.project): x = self.embedding_proj(x)
@@ -391,23 +388,26 @@ class Transformer_experts(nn.Module):
     def train_one_batch(self, batch, iter, train=True):
         enc_batch, _, _, enc_batch_extend_vocab, extra_zeros, _, _ = get_input_from_batch(batch)
         dec_batch, _, _, _, _ = get_output_from_batch(batch)
-        
+        #  enc_batch [batch_size, max_input_len]
+        # decode batch [batch_size, max_output_len]
         if(config.noam):
             self.optimizer.optimizer.zero_grad()
         else:
             self.optimizer.zero_grad()
         ## Encode
         mask_src = enc_batch.data.eq(config.PAD_idx).unsqueeze(1)
+        # mask_src [bs, 1, max_input_len]
         if config.dataset=="empathetic":
             emb_mask = self.embedding(batch["mask_input"])
             encoder_outputs = self.encoder(self.embedding(enc_batch)+emb_mask,mask_src)
+            
         else:
             encoder_outputs = self.encoder(self.embedding(enc_batch),mask_src)
         ## Attention over decoder
         q_h = torch.mean(encoder_outputs,dim=1) if config.mean_query else encoder_outputs[:,0]
-        #q_h = encoder_outputs[:,0]
+        #q_h is h0, [bs, dim]
         logit_prob = self.decoder_key(q_h) #(bsz, num_experts)
-
+        # logit_prob is attention, [bs, 32]
         if(config.topk>0):
             k_max_value, k_max_index = torch.topk(logit_prob, config.topk)
             a = np.empty([logit_prob.shape[0], self.decoder_number])
@@ -431,8 +431,11 @@ class Transformer_experts(nn.Module):
         mask_trg = dec_batch_shift.data.eq(config.PAD_idx).unsqueeze(1)
        
         pre_logit, attn_dist = self.decoder(self.embedding(dec_batch_shift),encoder_outputs, (mask_src,mask_trg), attention_parameters)
+        # pre_logit [bs, len, hidden]
         ## compute output dist
         logit = self.generator(pre_logit,attn_dist,enc_batch_extend_vocab if config.pointer_gen else None, extra_zeros, attn_dist_db=None)
+        # logit [bs, len, vocab]
+        
         #logit = F.log_softmax(logit,dim=-1) #fix the name later
         ## loss: NNL if ptr else Cross entropy
         if(train and config.schedule>10):
@@ -566,7 +569,8 @@ class Transformer_experts(nn.Module):
             # Sample from the filtered distribution
             next_word = torch.multinomial(F.softmax(filtered_logit, dim=-1), 1).squeeze()
             decoded_words.append(['<EOS>' if ni.item() == config.EOS_idx else self.vocab.index2word[ni.item()] for ni in next_word.view(-1)])
-            next_word = next_word.data[0]
+            # next_word = next_word.data[0]
+            next_word = next_word.data.item()
             if config.USE_CUDA:
                 ys = torch.cat([ys, torch.ones(1, 1).long().fill_(next_word).cuda()], dim=1)
                 ys = ys.cuda()

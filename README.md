@@ -28,7 +28,3 @@ http://nlp.stanford.edu/data/glove.6B.zip
 ```
 python main.py
 ```
-## Test
-```
-python main.py --test --save_path [output_file_path]
-```

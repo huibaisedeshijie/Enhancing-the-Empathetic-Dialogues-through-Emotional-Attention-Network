@@ -1,6 +1,7 @@
 
 import torch
 import torch.utils.data as data
+from torch.utils.data.sampler import SubsetRandomSampler
 import random
 import math
 import os
@@ -16,10 +17,8 @@ import ast
 import time
 from model.common_layer import write_config
 from utils.data_reader import load_dataset
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-torch.manual_seed(0)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
 
 class Dataset(data.Dataset):
     """Custom data.Dataset compatible with data.DataLoader."""
@@ -32,6 +31,8 @@ class Dataset(data.Dataset):
         'impressed': 8, 'afraid': 9, 'disgusted': 10, 'confident': 11, 'terrified': 12, 'hopeful': 13, 'anxious': 14, 'disappointed': 15,
         'joyful': 16, 'prepared': 17, 'guilty': 18, 'furious': 19, 'nostalgic': 20, 'jealous': 21, 'anticipating': 22, 'embarrassed': 23,
         'content': 24, 'devastated': 25, 'sentimental': 26, 'caring': 27, 'trusting': 28, 'ashamed': 29, 'apprehensive': 30, 'faithful': 31}
+        self.analyzer = SentimentIntensityAnalyzer()
+
     def __len__(self):
         return len(self.data["target"])
 
@@ -42,8 +43,9 @@ class Dataset(data.Dataset):
         item["target_text"] = self.data["target"][index]
         item["emotion_text"] = self.data["emotion"][index]
 
-        item["context"], item["context_mask"] = self.preprocess(item["context_text"])
+        item["context_emotion_scores"] = self.analyzer.polarity_scores(' '.join(self.data["context"][index][0]))
 
+        item["context"], item["context_mask"] = self.preprocess(item["context_text"])
         item["target"] = self.preprocess(item["target_text"], anw=True)
         item["emotion"], item["emotion_label"] = self.preprocess_emo(item["emotion_text"], self.emo_map)
 
@@ -112,7 +114,10 @@ def collate_fn(data):
     d["input_txt"] = item_info['context_text']
     d["target_txt"] = item_info['target_text']
     d["program_txt"] = item_info['emotion_text']
-    return d 
+
+    d["context_emotion_scores"] = item_info["context_emotion_scores"]
+    # d["target_emotion_scores"] = item_info["target_emotion_scores"]
+    return d
 
 
 def prepare_data_seq(batch_size=32):  
@@ -122,18 +127,14 @@ def prepare_data_seq(batch_size=32):
     logging.info("Vocab  {} ".format(vocab.n_words))
 
     dataset_train = Dataset(pairs_tra, vocab)
-    data_loader_tra = torch.utils.data.DataLoader(dataset=dataset_train,
-                                                 batch_size=batch_size,
+    data_loader_tra = torch.utils.data.DataLoader(dataset=dataset_train, batch_size=batch_size,
                                                  shuffle=True, collate_fn=collate_fn)
 
     dataset_valid = Dataset(pairs_val, vocab)
-    data_loader_val = torch.utils.data.DataLoader(dataset=dataset_valid,
-                                                 batch_size=batch_size,
+    data_loader_val = torch.utils.data.DataLoader(dataset=dataset_valid, batch_size=batch_size,
                                                  shuffle=True, collate_fn=collate_fn)
-    #print('val len:',len(dataset_valid))
     dataset_test = Dataset(pairs_tst, vocab)
-    data_loader_tst = torch.utils.data.DataLoader(dataset=dataset_test,
-                                                 batch_size=1,
+    data_loader_tst = torch.utils.data.DataLoader(dataset=dataset_test, batch_size=1,
                                                  shuffle=False, collate_fn=collate_fn)
     write_config()
     return data_loader_tra, data_loader_val, data_loader_tst, vocab, len(dataset_train.emo_map)

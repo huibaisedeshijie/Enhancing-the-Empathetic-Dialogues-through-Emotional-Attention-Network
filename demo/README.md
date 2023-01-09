@@ -14,8 +14,13 @@ gradio
 SentencePiece
 
 ## Run
+Demo for Chinses-to-Chinese
 ```
 python Demo-main.py
+```
+Demo for English-to-English
+```
+python Demo-main-en.py
 ```
 In the end, the terminal will display the local URL and public URL.
 

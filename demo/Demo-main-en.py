@@ -71,7 +71,7 @@ def translation_en_zh(text):
 #text_zh = input("User:")
 
 def end_to_end(text):
-    text_en_re = Emchatbot(text)
+    text_en = Emchatbot(text)
     print(text_en)
     return text_en
 
